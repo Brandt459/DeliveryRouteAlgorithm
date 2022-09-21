@@ -59,9 +59,8 @@ def getNextLocation(currentLocation, miles, time):
     for i in range(1, len(dfLocations) + 1):
         location = dfLocations.loc[i - 1]
         locationHash = locationHashTable.search(i)
-        # Location is not the same as the current location AND
         # Atleast 1 package needs to be delivered to the location
-        if location["Location"] != currentLocation and locationHash[3] > 0:
+        if locationHash[3] > 0:
             # If there is no value in shortest OR
             # If the distance between the location and the current location is the shortest found so far
             if not np.isnan(location[currentLocation]) and (shortest == None or location[currentLocation] < shortest):
@@ -69,25 +68,24 @@ def getNextLocation(currentLocation, miles, time):
                 closestLocation = location["Location"]
                 hash = locationHash
                 addr = location["Location1"]
-        else:
+        if location["Location"] == currentLocation:
             currentLocationIndex = i - 1
 
     # Second iteration, iterate over currentLocation distances
-    for i in range(30):
-        location = dfLocations.loc[currentLocationIndex]
-        for index, (name, value) in enumerate(location.iteritems()):
-            if index > 1:
-                locationHash = locationHashTable.search(index - 1)
-                if name != currentLocation and locationHash[3] > 0:
-                    # If there is no value in shortest OR
-                    # If the distance between the location and the current location is the shortest found so far
-                    if not np.isnan(value) and (shortest == None or value < shortest):
-                        shortest = value
-                        closestLocation = name
-                        hash = locationHash
-                        addr = locationHash[2]
+    location = dfLocations.loc[currentLocationIndex]
+    for index, (name, value) in enumerate(location.iteritems()):
+        if index > 1:
+            locationHash = locationHashTable.search(index - 1)
+            if locationHash[3] > 0:
+                # If there is no value in shortest OR
+                # If the distance between the location and the current location is the shortest found so far
+                if not np.isnan(value) and (shortest == None or value < shortest):
+                    shortest = value
+                    closestLocation = name
+                    hash = locationHash
+                    addr = locationHash[2]
 
-    if shortest:
+    if type(shortest) in [float, int, np.float64]:
         miles += shortest
         # Decrement packages to deliver to the location by one
         locationHashTable.remove(hash[0])
@@ -99,13 +97,13 @@ def getNextLocation(currentLocation, miles, time):
                 earliest = package[6]
                 latest = package[2]
 
-                """ if not np.isnan(earliest):
+                """ if type(earliest) in [float, int] and not np.isnan(earliest):
                     earliestTime = datetime.strptime(earliest, "%H:%M:%S")
                     # If earliest delivery time is after the current time
                     if earliestTime > time:
                         pass
 
-                if not np.isnan(latest):
+                if type(latest) in [float, int] and not np.isnan(latest):
                     latestTime = datetime.strptime(latest, "%H:%M:%S")
                     # If latest delivery time is before the current time
                     if latestTime < time:
@@ -121,6 +119,7 @@ def getNextLocation(currentLocation, miles, time):
 totalMiles = 0
 time = datetime.strptime("08:00", "%H:%M")
 
+
 while getPackagesNotDelivered():
     '''
         If there is a package that has not been delivered:
@@ -128,53 +127,30 @@ while getPackagesNotDelivered():
             Return to hub
             Continue until all packages have been delivered
     '''
-    route = []
-    closestLocation = locationHashTable.search(1)[1]
-    mileage = 0
+    route1 = []
+    route2 = []
+    closestLocation1 = locationHashTable.search(1)[1]
+    closestLocation2 = locationHashTable.search(1)[1]
+    mileage1 = 0
+    mileage2 = 0
     for _ in range(16):
-        closestLocation, miles = getNextLocation(closestLocation, mileage, time)
-        mileage = miles
-        if closestLocation == None:
+        closestLocation1, miles1 = getNextLocation(closestLocation1, mileage1, time)
+        mileage1 = miles1
+        closestLocation2, miles2 = getNextLocation(closestLocation2, mileage2, time)
+        mileage2 = miles2
+        if closestLocation1 == None:
             break
-        route.append(closestLocation)
+        if closestLocation2 == None:
+            break
+        route1.append(closestLocation1)
+        route2.append(closestLocation2)
 
     for i in range(1, len(dfLocations) + 1):
         location = dfLocations.loc[i - 1]
-        if location["Location"] == closestLocation:
-            mileage += location[locationHashTable.search(1)[1]]
-    totalMiles += mileage
+        if location["Location"] == closestLocation1:
+            mileage1 += location[locationHashTable.search(1)[1]]
+        if location["Location"] == closestLocation2:
+            mileage2 += location[locationHashTable.search(1)[1]]
+    totalMiles += mileage1 + mileage2
 
 print(totalMiles)
-
-
-# Part 1: How many packages per location
-
-""" for i in range(1, len(dfPackages) + 1):
-    package = packageHashTable.search(i)
-    location = locationHashTable.search(package[9])
-    locationHashTable.remove(package[9])
-    location[3] += 1
-    locationHashTable.insert(location)
-    for j in range(1, len(dfPackages) + 1):
-        # If addresses are equal
-        package2 = packageHashTable.search(j)
-        if package[1] == package2[1]:
-            earliest1 = datetime.strptime("08:00", "%H:%M")
-            earliest2 = datetime.strptime("08:00", "%H:%M")
-            latest1 = datetime.strptime("23:59", "%H:%M")
-            latest2 = datetime.strptime("23:59", "%H:%M")
-            if type(package[6]) == str:
-                earliest1 = datetime.strptime(str(package[6]), "%H:%M:%S")
-            if type(package2[6]) == str:
-                earliest2 = datetime.strptime(str(package2[6]), "%H:%M:%S")
-            if type(package[2]) == str and package[2] != "EOD":
-                latest1 = datetime.strptime(str(package[2]), "%H:%M:%S")
-            if type(package2[2]) == str  and package2[2] != "EOD":
-                latest2 = datetime.strptime(str(package2[2]), "%H:%M:%S")
-            # If delivery windows overlap
-            if earliest1 < latest2 and earliest2 < latest1: """
-
-
-
-# Part 2: Same time deliveries
-
