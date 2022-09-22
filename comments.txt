@@ -3,6 +3,6 @@
 3. Greedy algorithm to find locations for 16 packages
 
 Constraints:
-Truck #
-Delivery window
+✅ Truck #
+✅ Delivery window
 Delivered with other packages
