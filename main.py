@@ -15,7 +15,7 @@ dfLocations = pd.read_csv("distance_table.csv")
 
 for i in range(len(dfPackages)):
     package = []
-    cols = ["Package ID", "Address", "Delivery Deadline", "City", "Zip", "KILOs", "Earliest", "Truck"]
+    cols = ["Package ID", "Address", "Delivery Deadline", "City", "Zip", "KILOs", "Earliest", "Truck", "Dependency1", "Dependency2"]
 
     for col in cols:
         package.append(dfPackages.loc[i][col])
@@ -34,8 +34,8 @@ for i in range(len(dfLocations)):
 
 for i in range(1, len(dfPackages) + 1):
     package = packageHashTable.search(i)
-    location = locationHashTable.search(package[9])
-    locationHashTable.remove(package[9])
+    location = locationHashTable.search(package[11])
+    locationHashTable.remove(package[11])
     location[3] += 1
     locationHashTable.insert(location)
 
@@ -43,7 +43,7 @@ for i in range(1, len(dfPackages) + 1):
 def getPackagesNotDelivered():
     count = 0
     for i in range(1, len(dfPackages) + 1):
-        if packageHashTable.search(i)[8] != "Delivered":
+        if packageHashTable.search(i)[10] != "Delivered":
             count += 1
     if count > 0:
         return True
@@ -59,42 +59,92 @@ def getNextLocation(currentLocation, miles, startMiles, truck):
     soonestDeadline = None
     soonestPackage = None
 
+    soonestDependencyDeadline = None
+    soonestDependencyPackage = None
+
     time = datetime.strptime("08:00", "%H:%M")
     timeChange = timedelta(hours=miles/18)
     timeChangeStartMiles = timedelta(hours=startMiles/18)
     startTime = time + timeChangeStartMiles
-    time = time + timeChange
+    time += timeChange
+
     for i in range(1, len(dfPackages) + 1):
         package = packageHashTable.search(i)
-        if package[8] != "Delivered" and (np.isnan(package[7]) or package[7] == truck):
+        if package[10] != "Delivered" and (np.isnan(package[7]) or package[7] == truck):
             earliest = package[6]
             latest = package[2]
-            
-            if type(latest) == str and latest != "EOD":
-                latestTime = datetime.strptime(latest, "%H:%M:%S")
-                # If latest delivery time is earlier than soonestDeadline
-                if soonestDeadline == None or latestTime < soonestDeadline:
-                    soonestDeadline = latestTime
-                    soonestPackage = package
 
-            if type(earliest) == str:
-                earliestTime = datetime.strptime(earliest, "%H:%M:%S")
-                # If earliest delivery time is after the route start time
-                if earliestTime > startTime:
-                    continue
+            if package[9]:
+                if type(latest) == str and latest != "EOD":
+                    latestTime = datetime.strptime(latest, "%H:%M:%S")
+                    # If latest delivery time is earlier than soonestDeadline
+                    if soonestDependencyDeadline == None or latestTime < soonestDependencyDeadline:
+                        soonestDependencyDeadline = latestTime
+                        soonestDependencyPackage = package
+                else:
+                    if soonestDependencyDeadline == None:
+                        soonestDependencyPackage = package
+            else:
+                if type(latest) == str and latest != "EOD":
+                    latestTime = datetime.strptime(latest, "%H:%M:%S")
+                    # If latest delivery time is earlier than soonestDeadline
+                    if soonestDeadline == None or latestTime < soonestDeadline:
+                        soonestDeadline = latestTime
+                        soonestPackage = package
+
+                if type(earliest) == str:
+                    earliestTime = datetime.strptime(earliest, "%H:%M:%S")
+                    # If earliest delivery time is after the route start time
+                    if earliestTime > startTime:
+                        continue
 
             locations.append(package[1])
 
-    if soonestDeadline:
-        location = dfLocations.loc[soonestPackage[9] - 1]
-        locationHash = locationHashTable.search(soonestPackage[9])
+    if soonestDependencyPackage:
+        location = dfLocations.loc[soonestDependencyPackage[11] - 1]
+        locationHash = locationHashTable.search(soonestDependencyPackage[11])
 
         if not np.isnan(location[currentLocation]):
             hash = locationHash
             locationHashTable.remove(hash[0])
             hash[3] -= 1
             locationHashTable.insert(hash)
-            soonestPackage[8] = "Delivered"
+            soonestDependencyPackage[10] = "Delivered"
+            packageHashTable.remove(soonestDependencyPackage[0])
+            packageHashTable.insert(soonestDependencyPackage)
+            miles += location[currentLocation]
+            return locationHash[2], miles
+
+        for i in range(1, len(dfLocations) + 1):
+            locationHash = locationHashTable.search(i)
+            if locationHash[2] == currentLocation:
+                location = dfLocations.loc[i - 1]
+                for index, (name, value) in enumerate(location.iteritems()):
+                    if index > 1:
+                        locationHash = locationHashTable.search(index - 1)
+                        if locationHash[2] == soonestDependencyPackage[1]:
+                            if not np.isnan(value):
+                                hash = locationHash
+                                locationHashTable.remove(hash[0])
+                                hash[3] -= 1
+                                locationHashTable.insert(hash)
+                                soonestDependencyPackage[10] = "Delivered"
+                                packageHashTable.remove(soonestDependencyPackage[0])
+                                packageHashTable.insert(soonestDependencyPackage)
+                                miles += location[currentLocation]
+                                return locationHash[2], miles
+                break
+
+    if soonestPackage:
+        location = dfLocations.loc[soonestPackage[11] - 1]
+        locationHash = locationHashTable.search(soonestPackage[11])
+
+        if not np.isnan(location[currentLocation]):
+            hash = locationHash
+            locationHashTable.remove(hash[0])
+            hash[3] -= 1
+            locationHashTable.insert(hash)
+            soonestPackage[10] = "Delivered"
             packageHashTable.remove(soonestPackage[0])
             packageHashTable.insert(soonestPackage)
             miles += location[currentLocation]
@@ -113,7 +163,7 @@ def getNextLocation(currentLocation, miles, startMiles, truck):
                                 locationHashTable.remove(hash[0])
                                 hash[3] -= 1
                                 locationHashTable.insert(hash)
-                                soonestPackage[8] = "Delivered"
+                                soonestPackage[10] = "Delivered"
                                 packageHashTable.remove(soonestPackage[0])
                                 packageHashTable.insert(soonestPackage)
                                 miles += location[currentLocation]
@@ -159,8 +209,8 @@ def getNextLocation(currentLocation, miles, startMiles, truck):
         locationHashTable.insert(hash)
         for i in range(1, len(dfPackages) + 1):
             package = packageHashTable.search(i)
-            if package[1] == hash[2] and package[8] != "Delivered":
-                package[8] = "Delivered"
+            if package[1] == hash[2] and package[10] != "Delivered":
+                package[10] = "Delivered"
                 packageHashTable.remove(package[0])
                 packageHashTable.insert(package)
                 break

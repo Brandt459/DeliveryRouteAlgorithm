@@ -5,4 +5,4 @@
 Constraints:
 ✅ Truck #
 ✅ Delivery window
-Delivered with other packages
+✅ Delivered with other packages
