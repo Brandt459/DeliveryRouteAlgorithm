@@ -62,14 +62,21 @@ def setSoonest(soonestDeadline, soonestPackage, package, latest, dependency=Fals
             soonestPackage = package
     return soonestDeadline, soonestPackage
 
-def deliverPackage(locationHash, package, miles, currentLocationDistance):
+def deliverPackage(locationHash, package, miles, startMiles, currentLocationDistance):
     locationHashTable.remove(locationHash[0])
     locationHash[3] -= 1
     locationHashTable.insert(locationHash)
     package[10] = "Delivered"
+    miles += currentLocationDistance
+    time = datetime.strptime("08:00", "%H:%M")
+    timeChange = timedelta(hours=miles/18)
+    time += timeChange
+    timeChangeStartMiles = timedelta(hours=startMiles/18)
+    startTime = time + timeChangeStartMiles
+    package.append(time)
+    package.append(startTime)
     packageHashTable.remove(package[0])
     packageHashTable.insert(package)
-    miles += currentLocationDistance
     return locationHash[2], miles
 
 
@@ -115,7 +122,7 @@ def getNextLocation(currentLocation, miles, startMiles, truck):
             locationHash = locationHashTable.search(var[11])
 
             if not np.isnan(location[currentLocation]):
-                return deliverPackage(locationHash, var, miles, location[currentLocation])
+                return deliverPackage(locationHash, var, miles, startMiles, location[currentLocation])
 
             for i in range(1, len(dfLocations) + 1):
                 locationHash = locationHashTable.search(i)
@@ -126,7 +133,7 @@ def getNextLocation(currentLocation, miles, startMiles, truck):
                             locationHash = locationHashTable.search(index - 1)
                             if locationHash[2] == var[1]:
                                 if not np.isnan(value):
-                                    return deliverPackage(locationHash, var, miles, location[currentLocation])
+                                    return deliverPackage(locationHash, var, miles, startMiles, location[currentLocation])
                     break
 
     for i in range(1, len(dfLocations) + 1):
@@ -167,7 +174,7 @@ def getNextLocation(currentLocation, miles, startMiles, truck):
             if package[1] == hash[2] and package[10] != "Delivered":
                 packageToDeliver = package
                 break
-        return deliverPackage(hash, packageToDeliver, miles, shortest)
+        return deliverPackage(hash, packageToDeliver, miles, startMiles, shortest)
     
     return None, miles
 
@@ -190,10 +197,8 @@ while getPackagesNotDelivered():
     startMiles1 = totalMiles1
     startMiles2 = totalMiles2
     for _ in range(16):
-        closestLocation1, miles1 = getNextLocation(closestLocation1, totalMiles1, startMiles1, 1)
-        totalMiles1 = miles1
-        closestLocation2, miles2 = getNextLocation(closestLocation2, totalMiles2, startMiles2, 2)
-        totalMiles2 = miles2
+        closestLocation1, totalMiles1 = getNextLocation(closestLocation1, totalMiles1, startMiles1, 1)
+        closestLocation2, totalMiles2 = getNextLocation(closestLocation2, totalMiles2, startMiles2, 2)
         if closestLocation1 == None:
             break
         if closestLocation2 == None:
@@ -208,4 +213,19 @@ while getPackagesNotDelivered():
         if location["Location"] == closestLocation2:
             totalMiles2 += location[locationHashTable.search(1)[1]]
 
-print(totalMiles1 + totalMiles2)
+print("Total Miles: " + str(totalMiles1 + totalMiles2))
+timestamp = input("Input time (HH:MM): ")
+for i in range(1, len(dfPackages) + 1):
+    package = packageHashTable.search(i)
+
+    timestmp = datetime.strptime(timestamp, "%H:%M")
+
+    time = package[12]
+    routeStartTime = package[13]
+
+    deliveryStatus = "At Hub"
+    if time < timestmp:
+        deliveryStatus = "Delivered"
+    elif time < routeStartTime:
+        deliveryStatus = "In Route"
+    print("Package ID: " + str(package[0]) + " Delivery Status: " + deliveryStatus)
