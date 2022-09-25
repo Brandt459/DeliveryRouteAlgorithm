@@ -1,8 +1,0 @@
-1. How many packages per location
-2. What packages are ready to be delivered
-3. Greedy algorithm to find locations for 16 packages
-
-Constraints:
-✅ Truck #
-✅ Delivery window
-✅ Delivered with other packages

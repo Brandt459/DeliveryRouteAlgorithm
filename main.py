@@ -5,14 +5,14 @@ import pandas as pd
 from datetime import datetime, timedelta
 import numpy as np
 
-# Initiate and populate package and location hash tables
+# Initiate package and location hash tables
 packageHashTable = ChainingHashTable()
 dfPackages = pd.read_csv("package_file.csv")
 
 locationHashTable = ChainingHashTable()
 dfLocations = pd.read_csv("distance_table.csv")
 
-
+# Populate packageHashTable with package data from the package csv file
 for i in range(len(dfPackages)):
     package = []
     cols = ["Package ID", "Address", "Delivery Deadline", "City", "Zip", "KILOs", "Earliest", "Truck", "Dependency1", "Dependency2"]
@@ -27,29 +27,20 @@ for i in range(len(dfPackages)):
 
     packageHashTable.insert(package)
 
+# Populate locationHashTable with location data from the distance table csv file
 for i in range(len(dfLocations)):
     location = dfLocations.loc[i]["Location"]
     location1 = dfLocations.loc[i]["Location1"]
-    locationHashTable.insert([i + 1, location, location1, 0])
+    locationHashTable.insert([i + 1, location, location1])
 
-for i in range(1, len(dfPackages) + 1):
-    package = packageHashTable.search(i)
-    location = locationHashTable.search(package[11])
-    locationHashTable.remove(package[11])
-    location[3] += 1
-    locationHashTable.insert(location)
-
-
+# Return True if there are packages to be delivered
 def getPackagesNotDelivered():
-    count = 0
     for i in range(1, len(dfPackages) + 1):
         if packageHashTable.search(i)[10] != "Delivered":
-            count += 1
-    if count > 0:
-        return True
+            return True
     return False
 
-
+# Set soonest package to deliver
 def setSoonest(soonestDeadline, soonestPackage, package, latest, dependency=False):
     if type(latest) == str and latest != "EOD":
         latestTime = datetime.strptime(latest, "%H:%M:%S")
@@ -62,24 +53,22 @@ def setSoonest(soonestDeadline, soonestPackage, package, latest, dependency=Fals
             soonestPackage = package
     return soonestDeadline, soonestPackage
 
+# Set package delivery status to Delivered and set delivery timestamps
 def deliverPackage(locationHash, package, miles, startMiles, currentLocationDistance):
-    locationHashTable.remove(locationHash[0])
-    locationHash[3] -= 1
-    locationHashTable.insert(locationHash)
     package[10] = "Delivered"
     miles += currentLocationDistance
     time = datetime.strptime("08:00", "%H:%M")
     timeChange = timedelta(hours=miles/18)
-    time += timeChange
     timeChangeStartMiles = timedelta(hours=startMiles/18)
     startTime = time + timeChangeStartMiles
+    time += timeChange
     package.append(time)
     package.append(startTime)
     packageHashTable.remove(package[0])
     packageHashTable.insert(package)
     return locationHash[2], miles
 
-
+# Get next package delivery location
 def getNextLocation(currentLocation, miles, startMiles, truck):
     shortest = None
     hash = None
@@ -98,24 +87,27 @@ def getNextLocation(currentLocation, miles, startMiles, truck):
     startTime = time + timeChangeStartMiles
     time += timeChange
 
+    # Set locations of packages to be delivered and soonest packages to be delivered to meet deadlines/dependency constraints
     for i in range(1, len(dfPackages) + 1):
         package = packageHashTable.search(i)
         if package[10] != "Delivered" and (np.isnan(package[7]) or package[7] == truck):
             earliest = package[6]
             latest = package[2]
 
+            if type(earliest) == str:
+                earliestTime = datetime.strptime(earliest, "%H:%M:%S")
+                # If earliest delivery time is after the route start time
+                if earliestTime > startTime:
+                    continue
+
             if not np.isnan(package[9]):
                 soonestDependencyDeadline, soonestDependencyPackage = setSoonest(soonestDependencyDeadline, soonestDependencyPackage, package, latest, dependency=True)
             else:
                 soonestDeadline, soonestPackage = setSoonest(soonestDeadline, soonestPackage, package, latest)
-                if type(earliest) == str:
-                    earliestTime = datetime.strptime(earliest, "%H:%M:%S")
-                    # If earliest delivery time is after the route start time
-                    if earliestTime > startTime:
-                        continue
-
+                
             locations.append(package[1])
 
+    # If there is a package with a deadline/dependency constraint, deliver this package ASAP
     for var in [soonestDependencyPackage, soonestPackage]:
         if var:
             location = dfLocations.loc[var[11] - 1]
@@ -136,6 +128,7 @@ def getNextLocation(currentLocation, miles, startMiles, truck):
                                     return deliverPackage(locationHash, var, miles, startMiles, location[currentLocation])
                     break
 
+    # Find shortest distance to the next location with a package to be delivered
     for i in range(1, len(dfLocations) + 1):
         location = dfLocations.loc[i - 1]
         locationHash = locationHashTable.search(i)
@@ -155,7 +148,7 @@ def getNextLocation(currentLocation, miles, startMiles, truck):
             currentLocationIndex = i - 1
 
     # Second iteration, iterate over currentLocation distances
-    if shortest == None or shortest > 0:
+    if shortest != 0:
         location = dfLocations.loc[currentLocationIndex]
         for index, (name, value) in enumerate(location.iteritems()):
             if index > 1:
@@ -167,22 +160,22 @@ def getNextLocation(currentLocation, miles, startMiles, truck):
                         shortest = value
                         hash = locationHash
 
-    if type(shortest) in [int, np.float64]:
-        packageToDeliver = None
+    # If shortest has a value, deliver a package to this location
+    if shortest != None:
         for i in range(1, len(dfPackages) + 1):
             package = packageHashTable.search(i)
             if package[1] == hash[2] and package[10] != "Delivered":
-                packageToDeliver = package
+                return deliverPackage(hash, package, miles, startMiles, shortest)
                 break
-        return deliverPackage(hash, packageToDeliver, miles, startMiles, shortest)
     
+    # If there are no locations to deliver a package to, return None
     return None, miles
 
 
 totalMiles1 = 0
 totalMiles2 = 0
 
-
+# While there are packages to be delivered, set the next delivery route
 while getPackagesNotDelivered():
     '''
         If there is a package that has not been delivered:
@@ -196,6 +189,8 @@ while getPackagesNotDelivered():
     closestLocation2 = locationHashTable.search(1)[2]
     startMiles1 = totalMiles1
     startMiles2 = totalMiles2
+
+    # Set a max delivery route of 16 packages
     for _ in range(16):
         closestLocation1, totalMiles1 = getNextLocation(closestLocation1, totalMiles1, startMiles1, 1)
         closestLocation2, totalMiles2 = getNextLocation(closestLocation2, totalMiles2, startMiles2, 2)
@@ -206,6 +201,7 @@ while getPackagesNotDelivered():
         route1.append(closestLocation1)
         route2.append(closestLocation2)
 
+    # Add the distance to return the truck to the hub
     for i in range(1, len(dfLocations) + 1):
         location = dfLocations.loc[i - 1]
         if location["Location"] == closestLocation1:
@@ -215,17 +211,28 @@ while getPackagesNotDelivered():
 
 print("Total Miles: " + str(totalMiles1 + totalMiles2))
 timestamp = input("Input time (HH:MM): ")
+
+# Input validation on user specified time
+while True:
+    try:
+        timestmp = datetime.strptime(timestamp, "%H:%M")
+        break
+    except:
+        timestamp = input("Invalid time, Input time (HH:MM): ")
+        continue
+
+# Iterate over all packages and print the delivery status of each package at the user specified time
 for i in range(1, len(dfPackages) + 1):
     package = packageHashTable.search(i)
 
     timestmp = datetime.strptime(timestamp, "%H:%M")
 
-    time = package[12]
+    deliveredTime = package[12]
     routeStartTime = package[13]
 
     deliveryStatus = "At Hub"
-    if time < timestmp:
-        deliveryStatus = "Delivered"
-    elif time < routeStartTime:
-        deliveryStatus = "In Route"
+    if deliveredTime < timestmp:
+        deliveryStatus = "Delivered At " + str(deliveredTime.time())
+    elif routeStartTime < timestmp:
+        deliveryStatus = "In Route Since " + str(routeStartTime.time())
     print("Package ID: " + str(package[0]) + " Delivery Status: " + deliveryStatus)
