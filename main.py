@@ -42,19 +42,24 @@ for i, row in enumerate(dfLocationsList, 1):
 # Return True if there are packages to be delivered
 def getPackagesNotDelivered():
     global dfPackages
+    count = 0
     for i in range(1, len(dfPackagesList) + 1):
         if packageHashTable.search(i)[11] != "Delivered":
-            return True
-    return False
+            count += 1
+    return count
 
 # Set soonest package to deliver
-def setSoonest(soonestDeadline, soonestPackage, package, latest, dependency=False):
+def setSoonest(soonestDeadline, soonestPackage, package, latest, currentLocation, dependency=False):
     if latest != "EOD":
         latestTime = datetime.strptime(latest, "%H:%M:%S")
         # If latest delivery time is earlier than soonestDeadline
         if soonestDeadline == None or latestTime < soonestDeadline:
             soonestDeadline = latestTime
             soonestPackage = package
+        elif latestTime == soonestDeadline:
+            if getDistance(package[12], currentLocation) < getDistance(soonestPackage[12], currentLocation):
+                soonestDeadline = latestTime
+                soonestPackage = package
     if dependency:
         if soonestDeadline == None:
             soonestPackage = package
@@ -76,17 +81,31 @@ def deliverPackage(location, package, miles, startMiles, currentLocationDistance
     packageHashTable.insert(package)
     return location, miles, package
 
+def getDistance(location, currentLocation):
+    locationRow = dfLocationsList[location - 1]
+    if locationRow[currentLocation + 1]:
+        return float(locationRow[currentLocation + 1])
+
+    locationRow = dfLocationsList[currentLocation - 1]
+    return float(locationRow[location + 1])
+
 # Get next package delivery location
 def getNextLocation(currentLocation, miles, startMiles, truck):
-    global dfPackages, dfLocations
     shortest = hash = soonestDeadline = soonestPackage = soonestDependencyDeadline = soonestDependencyPackage = None
     locations = []
+    dependent = False
 
     time = datetime.strptime("08:00", "%H:%M")
     timeChangeStartMiles = timedelta(hours=startMiles/18)
     startTime = time + timeChangeStartMiles
 
     # Set locations of packages to be delivered and soonest packages to be delivered to meet deadlines/dependency constraints
+    for i in range(1, len(dfPackagesList) + 1):
+        package = packageHashTable.search(i)
+        if type(package[10]) == int:
+            dependent = True
+
+
     for i in range(1, len(dfPackagesList) + 1):
         package = packageHashTable.search(i)
         if package[11] != "Delivered" and (type(package[8]) == str or package[8] == truck):
@@ -99,23 +118,27 @@ def getNextLocation(currentLocation, miles, startMiles, truck):
                 if earliestTime > startTime:
                     continue
 
-            if type(package[10]) != str:
-                soonestDependencyDeadline, soonestDependencyPackage = setSoonest(soonestDependencyDeadline, soonestDependencyPackage, package, latest, dependency=True)
+            if type(package[10]) == int:
+                locationDistance = getDistance(package[12], currentLocation)
+                if locationDistance == 0:
+                    return deliverPackage(package[12], package, miles, startMiles, locationDistance)
+
+                soonestDependencyDeadline, soonestDependencyPackage = setSoonest(soonestDependencyDeadline, soonestDependencyPackage, package, latest, currentLocation, dependency=True)
             else:
-                soonestDeadline, soonestPackage = setSoonest(soonestDeadline, soonestPackage, package, latest)
+                if not dependent:
+                    locationDistance = getDistance(package[12], currentLocation)
+                    if locationDistance == 0:
+                        return deliverPackage(package[12], package, miles, startMiles, locationDistance)
+                soonestDeadline, soonestPackage = setSoonest(soonestDeadline, soonestPackage, package, latest, currentLocation)
                 
             locations.append(package[1])
 
     # If there is a package with a deadline/dependency constraint, deliver this package ASAP
     for package in [soonestDependencyPackage, soonestPackage]:
         if package:
-            location = dfLocationsList[package[12] - 1]
-            if location[currentLocation + 1]:
-                return deliverPackage(package[12], package, miles, startMiles, float(location[currentLocation + 1]))
-
-            location = dfLocationsList[currentLocation - 1]
-            return deliverPackage(package[12], package, miles, startMiles, float(location[package[12] + 1]))
-
+            locationDistance = getDistance(package[12], currentLocation)
+            return deliverPackage(package[12], package, miles, startMiles, locationDistance)
+    
     # Find shortest distance to the next location with a package to be delivered
     for i, row in enumerate(dfLocationsList, 1):
         locationHash = locationHashTable.search(i)
@@ -143,13 +166,14 @@ def getNextLocation(currentLocation, miles, startMiles, truck):
                 return deliverPackage(package[12], package, miles, startMiles, shortest)
 
     # If there are no locations to deliver a package to, return None
-    return None, miles
+    return None, miles, None
 
 
 totalMiles1 = totalMiles2 = 0
 
 # While there are packages to be delivered, set the next delivery route
-while getPackagesNotDelivered():
+packagesNotDelivered = getPackagesNotDelivered()
+while packagesNotDelivered:
     '''
         If there is a package that has not been delivered:
             Run greedy algorithm 16 times to find which packages to load onto each truck first
@@ -161,6 +185,7 @@ while getPackagesNotDelivered():
     route2 = []
     packages1 = []
     packages2 = []
+    truck1 = truck2 = False
     closestLocation1 = closestLocation2 = 1
     startMiles1, startMiles2 = totalMiles1, totalMiles2
 
@@ -170,139 +195,41 @@ while getPackagesNotDelivered():
 
     # Set a max delivery route of 16 packages
     for _ in range(16):
-        for route, closestLocation, startMiles, totalMiles, truck in [(route1, closestLocation1, startMiles1, totalMiles1, 1), (route2, closestLocation2, startMiles2, totalMiles2, 2)]:
-            closestLocationtmp, totalMiles, package = getNextLocation(closestLocation, totalMiles, startMiles, truck)
+        if packagesNotDelivered > 16:
+            for route, closestLocation, startMiles, totalMiles, truck, packages in [(route1, closestLocation1, startMiles1, totalMiles1, 1, packages1), (route2, closestLocation2, startMiles2, totalMiles2, 2, packages2)]:
+                closestLocationtmp, totalMiles, package = getNextLocation(closestLocation, totalMiles, startMiles, truck)
+                if closestLocationtmp == None:
+                    break
+                route.append(closestLocationtmp)
+
+                if truck == 1:
+                    truck1 = True
+                    packages1.append(package[0])
+                    route1 = route
+                    closestLocation1 = closestLocationtmp
+                    totalMiles1 = totalMiles
+                else:
+                    truck2 = True
+                    route2 = route
+                    closestLocation2 = closestLocationtmp
+                    totalMiles2 = totalMiles
+        else:
+            closestLocationtmp, totalMiles, package = getNextLocation(closestLocation2, totalMiles2, startMiles2, 2)
             if closestLocationtmp == None:
                 break
-            packages1.append(package)
-            closestLocation = closestLocationtmp
-            route.append(closestLocation)
+            closestLocation2 = closestLocationtmp
+            route2.append(closestLocation2)
 
-
-            """ routeHash = routeHashTable.search(closestLocation1)
-            routeHashTable.remove(closestLocation1)
-            routeHash[1] += 1
-            if routeHash[1] > 1:
-                # If the index is not the index after the last encountered instance of location index,
-                # Swap locations at the current index and index after the last encountered instance of location
-                # Decrease route miles by the distance between the location before the current location, location after, and increase by the distance between the before and after location
-                # Change package timestamps
-                if len(route) - 1 != routeHash[-1] + 1:
-                    tmp = route[routeHash[-1] + 1]
-                    route[routeHash[-1] + 1] = closestLocation1
-                    route[i] = tmp
-
-                    prevLocation = route[i - 1]
-                    currLocation = route[i]
-                    nextLocation = route[i + 1]
-
-                    # Subtract distance between previous location and current location
-                    if dfLocationsList[prevLocation - 1][currLocation + 1]:
-                        totalMiles -= float(dfLocationsList[prevLocation - 1][currLocation + 1])
-                    else:
-                        totalMiles -= float(dfLocationsList[currLocation - 1][prevLocation + 1])
-                    
-                    # Subtract distance between current location and next location
-                    if dfLocationsList[currLocation - 1][nextLocation + 1]:
-                        totalMiles -= float(dfLocationsList[currLocation - 1][nextLocation + 1])
-                    else:
-                        totalMiles -= float(dfLocationsList[nextLocation - 1][currLocation + 1])
-
-                    # Add distance between previous location and next location
-                    if dfLocationsList[prevLocation - 1][nextLocation + 1]:
-                        totalMiles += float(dfLocationsList[prevLocation - 1][nextLocation + 1])
-                    else:
-                        totalMiles += float(dfLocationsList[nextLocation - 1][prevLocation + 1])
-                    
-                    routeHash.append(routeHash[-1] + 1)
-                    
-                    time = datetime.strptime("08:00", "%H:%M")
-                    timeChange = timedelta(hours=miles/18)
-                    timeChangeStartMiles = timedelta(hours=startMiles/18)
-                    startTime = time + timeChangeStartMiles
-                    time += timeChange
-
-                    packages[i][12] = time
-                    packages[i][13] = startTime
-                else:
-                    routeHash.append(i)
-            else:
-                    routeHash.append(i)
-            routeHashTable.insert(routeHash) """
-
-
-    """ # Reorganizing route to save miles by delivering to the same location without having to backtrack.
-    # This will only allow the truck to reach future locations faster, so delivery deadlines won't be effected.
-    # Package dependencies also will not be effected since the same packages are still on the truck, the order is just reorganized.
-    for index, route in enumerate([route1, route2]):
-        totalMiles = totalMiles1
-        packages = packages1
-        if index == 1:
-            totalMiles = totalMiles2
-            packages = packages2
-        routeHashTable = ChainingHashTable()
-        for i in range(1, len(dfLocationsList) + 1):
-            routeHashTable.insert([i, 0])
-        # Increment route location count by 1
-        for i, location in enumerate(route):
-            routeHash = routeHashTable.search(location)
-            routeHashTable.remove(location)
-            routeHash[1] += 1
-            if routeHash[1] > 1:
-                # If the index is not the index after the last encountered instance of location index,
-                # Swap locations at the current index and index after the last encountered instance of location
-                # Decrease route miles by the distance between the location before the current location, location after, and increase by the distance between the before and after location
-                # Change package timestamps
-                if i != routeHash[-1] + 1:
-                    tmp = route[routeHash[-1] + 1]
-                    route[routeHash[-1] + 1] = location
-                    route[i] = tmp
-
-                    prevLocation = route[i - 1]
-                    currLocation = route[i]
-                    nextLocation = route[i + 1]
-
-                    # Subtract distance between previous location and current location
-                    if dfLocationsList[prevLocation - 1][currLocation + 1]:
-                        totalMiles -= float(dfLocationsList[prevLocation - 1][currLocation + 1])
-                    else:
-                        totalMiles -= float(dfLocationsList[currLocation - 1][prevLocation + 1])
-                    
-                    # Subtract distance between current location and next location
-                    if dfLocationsList[currLocation - 1][nextLocation + 1]:
-                        totalMiles -= float(dfLocationsList[currLocation - 1][nextLocation + 1])
-                    else:
-                        totalMiles -= float(dfLocationsList[nextLocation - 1][currLocation + 1])
-
-                    # Add distance between previous location and next location
-                    if dfLocationsList[prevLocation - 1][nextLocation + 1]:
-                        totalMiles += float(dfLocationsList[prevLocation - 1][nextLocation + 1])
-                    else:
-                        totalMiles += float(dfLocationsList[nextLocation - 1][prevLocation + 1])
-                    
-                    routeHash.append(routeHash[-1] + 1)
-                    
-                    time = datetime.strptime("08:00", "%H:%M")
-                    timeChange = timedelta(hours=miles/18)
-                    timeChangeStartMiles = timedelta(hours=startMiles/18)
-                    startTime = time + timeChangeStartMiles
-                    time += timeChange
-
-                    packages[i][12] = time
-                    packages[i][13] = startTime
-                else:
-                    routeHash.append(i)
-            else:
-                    routeHash.append(i)
-            routeHashTable.insert(routeHash)
-        if index == 0:
-            totalMiles1 = totalMiles
-        else:
-            totalMiles2 = totalMiles """
+            truck2 = True
+            packages2.append(package[0])
+            totalMiles2 = totalMiles
 
     # Add the distance to return the truck to the hub
-    totalMiles1 += float(dfLocationsList[closestLocation1 - 1][2])
-    totalMiles2 += float(dfLocationsList[closestLocation2 - 1][2])
+    if truck1:
+        totalMiles1 += float(dfLocationsList[closestLocation1 - 1][2])
+    if truck2:
+        totalMiles2 += float(dfLocationsList[closestLocation2 - 1][2])
+    packagesNotDelivered = getPackagesNotDelivered()
 
 print("Total Miles: " + str(totalMiles1 + totalMiles2))
 timestamp = input("Input time (HH:MM): ")
