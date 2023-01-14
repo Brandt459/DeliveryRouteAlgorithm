@@ -4,6 +4,8 @@ import csv
 from ChainingHashTable import ChainingHashTable
 from datetime import datetime, timedelta
 
+print("Determining delivery route...\n")
+
 # Initiate package and location hash tables
 packageHashTable = ChainingHashTable()
 dfPackagesFile = open("package_file.csv", "r")
@@ -173,6 +175,8 @@ totalMiles1 = totalMiles2 = 0
 
 # While there are packages to be delivered, set the next delivery route
 packagesNotDelivered = getPackagesNotDelivered()
+truck1route = []
+truck2route = []
 while packagesNotDelivered:
     '''
         If there is a package that has not been delivered:
@@ -227,11 +231,26 @@ while packagesNotDelivered:
     # Add the distance to return the truck to the hub
     if truck1:
         totalMiles1 += float(dfLocationsList[closestLocation1 - 1][2])
+        route1.append(1)
     if truck2:
         totalMiles2 += float(dfLocationsList[closestLocation2 - 1][2])
+        route2.append(1)
+    for r in route1:
+        truck1route.append(dfLocationsList[r - 1][1])
+    for r in route2:
+        truck2route.append(dfLocationsList[r - 1][1])
     packagesNotDelivered = getPackagesNotDelivered()
 
-print("Total Miles: " + str(totalMiles1 + totalMiles2))
+print("Truck 1 package route:")
+for r in truck1route:
+    print(r)
+print("Total route miles: " + str(round(totalMiles1,2)))
+print("\nTruck 2 package route:")
+for r in truck2route:
+    print(r)
+print("Total route miles: " + str(round(totalMiles2, 2)))
+print("\nTotal Miles: " + str(round(totalMiles1 + totalMiles2, 2)))
+print("\nGet package delivery status at a certain time")
 timestamp = input("Input time (HH:MM): ")
 
 # Input validation on user specified time
@@ -243,7 +262,11 @@ while True:
         timestamp = input("Invalid time, Input time (HH:MM): ")
         continue
 
+print("\n")
 # Iterate over all packages and print the delivery status of each package at the user specified time
+totalAtHub = 0
+totalDelivered = 0
+totalInRoute = 0
 for i, row in enumerate(dfPackagesList, 1):
     package = packageHashTable.search(i)
 
@@ -254,7 +277,15 @@ for i, row in enumerate(dfPackagesList, 1):
 
     deliveryStatus = "At Hub"
     if deliveredTime < timestmp:
-        deliveryStatus = "Delivered At " + str(deliveredTime.time())
+        deliveryStatus = "Delivered At\t" + str(deliveredTime.time())
+        totalDelivered += 1
     elif routeStartTime < timestmp:
-        deliveryStatus = "In Route Since " + str(routeStartTime.time())
-    print("Package ID: " + str(package[0]) + " Delivery Status: " + deliveryStatus)
+        deliveryStatus = "In Route Since\t" + str(routeStartTime.time())
+        totalInRoute += 1
+    else:
+        totalAtHub += 1
+    print("Package ID: " + str(package[0]) + "\tDelivery Status: " + deliveryStatus)
+
+print("\nTotal packages at hub: " + str(totalAtHub))
+print("Total packages delivered: " + str(totalDelivered))
+print("Total packages in route: " + str(totalInRoute))
