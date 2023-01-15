@@ -1,4 +1,4 @@
-Package ID,Address,City,State,Zip,Delivery Deadline,KILOs,Earliest,Truck,Dependency1,Dependency2,Notes
+packageId,address,city,state,zip,deliveryDeadline,kils,earliest,truck,dependency1,dependency2,notes
 1,195 W Oakland Ave,Salt Lake City,UT,84115,10:30:00,21,,,,,
 2,2530 S 500 E,Salt Lake City,UT,84106,EOD,44,,,,,
 3,233 Canyon Rd,Salt Lake City,UT,84103,EOD,2,,2,,,Can only be on truck 2
